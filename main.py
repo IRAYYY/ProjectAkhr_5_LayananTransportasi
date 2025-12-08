@@ -1,626 +1,524 @@
 from datetime import datetime
-import time
+# DATA BANDARA
+bandara = {
+    1: "Soekarno-Hatta (CGK)",
+    2: "Juanda (SUB)",
+    3: "Ngurah Rai (DPS)",
+    4: "Kualanamu (KNO)",
+    5: "Hasanuddin (UPG)",
+    6: "Minangkabau (PDG)",
+    7: "Ahmad Yani (SRG)",
+    8: "Adisucipto (JOG)",
+    9: "Halim Perdanakusuma (HLP)",
+    10: "Sultan Mahmud Badaruddin II (PLM)",
+    11: "Sultan Syarif Kasim II (PKU)",
+    12: "Supadio (PNK)"
+}
+
+
+# DATA MASTER
 
 akun = {}
-rute_pesawat = {}   
-pesanan = {}        
+rute_pesawat = {}       
+pesanan = {}            
+riwayat = {}            
 id_terakhir = 0
 
-# login loket dan admin, tuple bang
 login_loket = ("loket123", "loket1234")
 login_admin = ("admin123", "admin1234")
 
-# Kode diskon
-kode_diskon = {
-    "DISKON10": 10,
-    "DISKON20": 20
-}
 
-def input_nonempty(prompt):
+# INPUT HELPER
+
+def input_nonempty(p):
     while True:
-        val = input(prompt)
-        if val.strip() == "":
+        v = input(p).strip()
+        if v == "":
             print("Input tidak boleh kosong!\n")
         else:
-            return val.strip()
+            return v
 
-def input_optional(prompt):
-    val = input(prompt)
-    return val  # bisa kosong
-
-def input_harga(prompt):
+def input_angka(p):
     while True:
-        v = input(prompt)
-        if v.strip() == "":
-            print("Input tidak boleh kosong!\n")
-            continue
+        v = input_nonempty(p)
         if not v.isdigit():
-            print("Harga harus berupa angka!\n")
-            continue
-        return int(v)
+            print("Input harus angka!\n")
+        else:
+            return int(v)
 
-def input_telepon(prompt):
+def input_jadwal(p):
     while True:
-        v = input(prompt)
-        if v.strip() == "":
-            print("Input tidak boleh kosong!\n")
-            continue
-        if not v.isdigit():
-            print("Nomor telepon harus berupa angka!\n")
-            continue
-        return v
-
-def input_jadwal_not_past(prompt):
-    while True:
-        jadwal = input(prompt).strip()
-        if jadwal == "":
-            print("Jadwal tidak boleh kosong!\n")
-            continue
+        t = input_nonempty(p)
         try:
-            dt = datetime.strptime(jadwal, "%Y-%m-%d %H:%M")
-        except ValueError:
-            print("Format jadwal tidak valid! Gunakan format YYYY-MM-DD HH:MM\n")
-            continue
+            dt = datetime.strptime(t, "%Y-%m-%d %H:%M")
+            if dt < datetime.now():
+                print("Tidak boleh memilih waktu yang sudah lewat!\n")
+                continue
+            return t
+        except:
+            print("Format salah! Gunakan YYYY-MM-DD HH:MM\n")
 
-        if dt < datetime.now():
-            print("Jadwal tidak boleh kurang dari waktu sekarang!\n")
-            continue
 
-        return jadwal
+# CLEAN EXPIRED ROUTE & TICKET
 
-def bersihkan_rute_kadaluarsa():
-    """Hapus rute & semua tiket terkait jika jadwal sudah lewat."""
+def bersihkan_kadaluarsa():
     now = datetime.now()
-    rute_to_delete = []
+    to_del = []
+
     for key, data in rute_pesawat.items():
-        try:
-            dt = datetime.strptime(data["jadwal"], "%Y-%m-%d %H:%M")
-        except Exception:
-            # jika format jadwal rusak, skip
-            continue
+        dt = datetime.strptime(data["jadwal"], "%Y-%m-%d %H:%M")
         if dt < now:
-            rute_to_delete.append(key)
+            to_del.append(key)
 
-    for key in rute_to_delete:
+    for key in to_del:
+        # pindahkan semua pesanan ke riwayat expired
+        for uid, tk in pesanan.items():
+            for id_t, info in list(tk.items()):
+                if info["kode_rute"] == key:
+                    info["status"] = "expired"
+                    riwayat.setdefault(uid, {})[id_t] = info
+                    del pesanan[uid][id_t]
+
         del rute_pesawat[key]
-        # Hapus semua pesanan yang punya key_rute = key
-        for uid, tiket_dict in pesanan.items():
-            to_remove = []
-            for tiket_id, info in tiket_dict.items():
-                if info.get("key") == key:
-                    to_remove.append(tiket_id)
-            for tid in to_remove:
-                del tiket_dict[tid]
-        print(f"Rute '{key}' dan semua pesanan terkait telah kadaluarsa dan dihapus.")
 
-# ==============================
-# ADMIN
-# ==============================
-def create_rute():
+
+# ADMIN MENU
+
+def tampil_bandara():
+    print("\n===== DAFTAR BANDARA =====")
+    for i, b in bandara.items():
+        print(f"{i}. {b}")
+    print()
+
+def admin_tambah_rute():
     print("\n===== TAMBAH RUTE =====")
-    while True:
-        key_rute = input_nonempty("Masukkan Nama Rute: ").upper()
-        if key_rute in rute_pesawat:
-            print("Nama rute sudah digunakan!\n")
-            continue
-        break
+    kode = input_nonempty("Masukkan kode rute baru: ").upper()
 
-    rute = input_nonempty("Masukkan Bandara Keberangkatan dan Tujuan: ")
-
-    harga = input_harga("Masukkan harga tiket: ")
-
-    jadwal = input_jadwal_not_past("Masukkan jadwal keberangkatan (YYYY-MM-DD HH:MM): ")
-
-    rute_pesawat[key_rute] = {
-        "rute": rute,
-        "harga": harga,
-        "jadwal": jadwal
-    }
-    print("Rute berhasil ditambahkan!\n")
-
-def edit_rute():
-    if not rute_pesawat:
-        print("Belum ada rute untuk diedit.\n")
+    if kode in rute_pesawat:
+        print("Kode rute sudah ada!\n")
         return
 
-    print("\n===== EDIT RUTE =====")
-    for key, data in rute_pesawat.items():
-        print(f"Nama Rute: {key}")
-        print(f"Keberangkatan: {data['rute']}")
-        print(f"Harga: {data['harga']}")
-        print(f"Jadwal: {data['jadwal']}")
+    tampil_bandara()
+    asal = input_angka("Pilih nomor bandara keberangkatan: ")
+    if asal not in bandara:
+        print("Bandara tidak valid!\n")
+        return
+
+    tampil_bandara()
+    tujuan = input_angka("Pilih nomor bandara tujuan: ")
+    if tujuan not in bandara:
+        print("Bandara tidak valid!\n")
+        return
+
+    jadwal = input_jadwal("Masukkan jadwal (YYYY-MM-DD HH:MM): ")
+    harga = input_angka("Masukkan harga tiket: ")
+
+    # kursi total 140
+    kursi = {i: "O" for i in range(1, 141)}
+
+    rute_pesawat[kode] = {
+        "asal": bandara[asal],
+        "tujuan": bandara[tujuan],
+        "jadwal": jadwal,
+        "harga": harga,
+        "kursi": kursi
+    }
+
+    print("Rute berhasil ditambahkan!\n")
+
+def admin_tampil_rute():
+    bersihkan_kadaluarsa()
+    print("\n===== SEMUA RUTE =====")
+    if not rute_pesawat:
+        print("Belum ada rute.\n")
+        return
+
+    for kode, r in rute_pesawat.items():
+        print("------------------------")
+        print(f"Kode Rute   : {kode}")
+        print(f"Asal        : {r['asal']}")
+        print(f"Tujuan      : {r['tujuan']}")
+        print(f"Jadwal      : {r['jadwal']}")
+        print(f"Harga       : {r['harga']}")
         print("------------------------")
 
-    key = input_nonempty("Masukkan Nama rute yang ingin diedit: ").upper()
-    if key not in rute_pesawat:
+def admin_edit_rute():
+    admin_tampil_rute()
+    kode = input_nonempty("Masukkan kode rute yang ingin diedit: ").upper()
+
+    if kode not in rute_pesawat:
         print("Rute tidak ditemukan!\n")
         return
 
-    lama = rute_pesawat[key]
-    print("Tekan ENTER jika tidak ingin mengubah data.")
+    data = rute_pesawat[kode]
 
-    rute_baru = input_optional(f"Masukkan keberangkatan baru (kosongkan jika tidak diubah) [{lama['rute']}]: ").strip()
-    if rute_baru == "":
-        rute_baru = lama["rute"]
+    print("Tekan ENTER untuk tidak mengubah data")
 
-    # Harga
-    while True:
-        harga_baru_raw = input_optional(f"Masukkan harga baru (kosongkan jika tidak diubah) [{lama['harga']}]: ").strip()
-        if harga_baru_raw == "":
-            harga_baru = lama["harga"]
-            break
-        if not harga_baru_raw.isdigit():
-            print("Harga harus berupa angka!\n")
-            continue
-        harga_baru = int(harga_baru_raw)
-        break
+    # asal
+    tampil_bandara()
+    asal = input("Bandara asal baru (kosong = tdk diubah): ").strip()
+    if asal.isdigit() and int(asal) in bandara:
+        data["asal"] = bandara[int(asal)]
 
-    # Jadwal
-    while True:
-        jadwal_baru_raw = input_optional(f"Masukkan jadwal baru (YYYY-MM-DD HH:MM) (kosongkan jika tidak diubah) [{lama['jadwal']}]: ").strip()
-        if jadwal_baru_raw == "":
-            jadwal_baru = lama["jadwal"]
-            break
+    # tujuan
+    tampil_bandara()
+    tujuan = input("Bandara tujuan baru (kosong = tdk diubah): ").strip()
+    if tujuan.isdigit() and int(tujuan) in bandara:
+        data["tujuan"] = bandara[int(tujuan)]
+
+    # jadwal
+    jadwal_baru = input("Jadwal baru (YYYY-MM-DD HH:MM): ").strip()
+    if jadwal_baru:
         try:
-            dt = datetime.strptime(jadwal_baru_raw, "%Y-%m-%d %H:%M")
-        except ValueError:
-            print("Format jadwal tidak valid! Gunakan format YYYY-MM-DD HH:MM\n")
-            continue
-        if dt < datetime.now():
-            print("Jadwal tidak boleh kurang dari waktu sekarang!\n")
-            continue
-        jadwal_baru = jadwal_baru_raw
-        break
+            dt = datetime.strptime(jadwal_baru, "%Y-%m-%d %H:%M")
+            if dt > datetime.now():
+                data["jadwal"] = jadwal_baru
+        except:
+            print("Format jadwal salah, tidak diubah.")
 
-    rute_pesawat[key] = {
-        "rute": rute_baru,
-        "harga": harga_baru,
-        "jadwal": jadwal_baru
-    }
-    print("Data rute berhasil diperbarui!\n")
+    # harga
+    harga_baru = input("Harga baru: ").strip()
+    if harga_baru.isdigit():
+        data["harga"] = int(harga_baru)
 
-def tampil_rute():
-    bersihkan_rute_kadaluarsa()
-    print("\n===== DAFTAR SEMUA RUTE =====")
-    if not rute_pesawat:
-        print("Belum ada data rute.\n")
-        return
-    for key, data in rute_pesawat.items():
-        print(f"Kode Rute : {key}")
-        print(f"Rute      : {data['rute']}")
-        print(f"Harga     : {data['harga']}")
-        print(f"Jadwal    : {data['jadwal']}")
-        print("------------------------")
+    print("Rute berhasil diperbarui!\n")
 
-def hapus_rute():
-    if not rute_pesawat:
-        print("Belum ada rute untuk dihapus.\n")
+def admin_hapus_rute():
+    admin_tampil_rute()
+    kode = input_nonempty("Masukkan kode rute yang akan dihapus: ").upper()
+
+    if kode not in rute_pesawat:
+        print("Rute tidak ditemukan!\n")
         return
-    for key, data in rute_pesawat.items():
-        print(f"Kode Rute : {key} | Rute: {data['rute']} | Jadwal: {data['jadwal']}")
-    key = input_nonempty("Masukkan nama rute yang ingin dihapus: ").upper()
-    if key not in rute_pesawat:
-        print("Nama rute tidak ditemukan!\n")
-        return
-    del rute_pesawat[key]
-    # Hapus pesanan juga
-    for uid, tiket_dict in pesanan.items():
-        to_remove = []
-        for tid, info in tiket_dict.items():
-            if info.get("key") == key:
-                to_remove.append(tid)
-        for tid in to_remove:
-            del tiket_dict[tid]
-    print("Rute dan tiket terkait berhasil dihapus!\n")
+
+    del rute_pesawat[kode]
+    print("Rute berhasil dihapus!\n")
 
 def menu_admin():
     while True:
-        bersihkan_rute_kadaluarsa()
+        bersihkan_kadaluarsa()
         print("\n===== MENU ADMIN =====")
         print("1. Tambah Rute")
-        print("2. Edit Rute")
-        print("3. Tampilkan Semua Rute")
+        print("2. Tampilkan Rute")
+        print("3. Edit Rute")
         print("4. Hapus Rute")
         print("5. Kembali")
 
-        pilih = input_nonempty("Pilih menu: ")
+        p = input_nonempty("Pilih: ")
 
-        if pilih == "1":
-            create_rute()
-        elif pilih == "2":
-            edit_rute()
-        elif pilih == "3":
-            tampil_rute()
-        elif pilih == "4":
-            hapus_rute()
-        elif pilih == "5":
+        if p == "1":
+            admin_tambah_rute()
+        elif p == "2":
+            admin_tampil_rute()
+        elif p == "3":
+            admin_edit_rute()
+        elif p == "4":
+            admin_hapus_rute()
+        elif p == "5":
             break
         else:
-            print("Pilihan tidak valid!\n")
+            print("Pilihan salah!\n")
 
-# ==============================
-# USER MANAGEMENT
-# ==============================
+
+# USER SYSTEM
+
 def buat_akun():
     global id_terakhir
+
     print("\n===== BUAT AKUN =====")
-    nama = input_nonempty("Masukkan nama lengkap: ")
+    nama = input_nonempty("Nama lengkap: ")
 
     while True:
-        email = input("Masukkan email: ").lower().strip()
-        if email == "":
-            print("Email tidak boleh kosong!\n")
+        email = input_nonempty("Email: ").lower()
+        if "@" not in email:
+            print("Email tidak valid!")
             continue
         if email in akun:
             print("Email sudah digunakan!")
             continue
-        if "@" not in email:
-            print("Email harus mengandung @")
-            continue
         break
 
     while True:
-        password = input("Buat password: ")
-        if password.strip() == "":
-            print("Password tidak boleh kosong!\n")
-            continue
-        if len(password) < 8:
-            print("Password harus minimal 8 karakter!\n")
-            continue
-        break
+        pw = input_nonempty("Password (min 8): ")
+        if len(pw) < 8:
+            print("Minimal 8 karakter!\n")
+        else:
+            break
 
-    telepon = input_telepon("Masukkan nomor telepon: ")
+    telepon = input_nonempty("Telepon: ")
 
     id_terakhir += 1
-    akun[email] = {"id": id_terakhir, "nama": nama, "password": password, "telepon": telepon}
+    akun[email] = {
+        "id": id_terakhir,
+        "nama": nama,
+        "password": pw,
+        "telepon": telepon
+    }
 
-    print(f"Akun berhasil dibuat! ID Anda: {id_terakhir}")
-
-def lupa_password(email):
-    print("\n===== LUPA PASSWORD =====")
-    no_input = input_nonempty("Masukkan nomor telepon terkait akun: ")
-
-    if no_input == akun[email]["telepon"]:
-        while True:
-            pw_baru = input("Masukkan password baru: ")
-            if pw_baru.strip() == "":
-                print("Password tidak boleh kosong!\n")
-                continue
-            if len(pw_baru) < 8:
-                print("Password harus minimal 8 karakter!\n")
-                continue
-            break
-        akun[email]["password"] = pw_baru
-        print("Password berhasil direset! Silakan login ulang.\n")
-    else:
-        print("Nomor telepon salah!\n")
+    print("Akun berhasil dibuat!\n")
 
 def login():
     print("\n===== LOGIN =====")
-    email = input_nonempty("Masukkan email: ").lower()
+    email = input_nonempty("Email: ").lower()
 
     if email not in akun:
-        print("Akun tidak terdaftar!\n")
+        print("Email tidak terdaftar!\n")
         return None
 
-    percobaan = 0
-    while percobaan < 3:
-        pw = input("Masukkan password: ")
-        if pw.strip() == "":
-            print("Password tidak boleh kosong!\n")
-            continue
+    pw = input_nonempty("Password: ")
 
-        if pw == akun[email]["password"]:
-            print(f"\nSelamat datang, {akun[email]['nama']}!")
-            print("Login berhasil!\n")
-            return email
-        else:
-            percobaan += 1
-            print("Password salah!")
+    if pw == akun[email]["password"]:
+        print(f"Selamat datang {akun[email]['nama']}!\n")
+        return email
+    else:
+        print("Password salah!\n")
+        return None
 
-            if percobaan < 3:
-                pilihan = input("Ketik (y) untuk lupa password, selain (y) untuk mencoba lagi: ").lower()
-                if pilihan == "y":
-                    lupa_password(email)
-                    return None
 
-    print("\nPassword salah 3 kali! Akun dihapus.\n")
-    del akun[email]
-    return None
+# USER: TICKET MENU
 
-# ==============================
-# USER: PEMESANAN
-# ==============================
 def tampil_rute_user():
-    bersihkan_rute_kadaluarsa()
+    bersihkan_kadaluarsa()
     print("\n===== RUTE TERSEDIA =====")
+    if not rute_pesawat:
+        print("Belum ada rute.\n")
+        return
+
+    for kode, r in rute_pesawat.items():
+        print("------------------------")
+        print(f"Kode Rute  : {kode}")
+        print(f"Asal       : {r['asal']}")
+        print(f"Tujuan     : {r['tujuan']}")
+        print(f"Jadwal     : {r['jadwal']}")
+        print(f"Harga      : {r['harga']}")
+        print("------------------------")
+
+def tampil_kursi(kursi):
+    print("\n===== KURSI TERSEDIA =====")
+    for i in range(1, 141):
+        status = kursi[i]
+        print(f"{i}:{status}", end="  ")
+        if i % 10 == 0:
+            print()
+    print()
+
+def pesan_tiket(id_user):
+    bersihkan_kadaluarsa()
     if not rute_pesawat:
         print("Belum ada rute tersedia.\n")
         return
-    for key, data in rute_pesawat.items():
-        print("------------------------")
-        print(f"Kode Rute : {key}")
-        print(f"Rute      : {data['rute']}")
-        print(f"Harga     : {data['harga']}")
-        print(f"Jadwal    : {data['jadwal']}")
-        print("------------------------")
 
-def pesan_tiket(id_user):
-    bersihkan_rute_kadaluarsa()
-    if not rute_pesawat:
-        print("Belum ada rute untuk dipesan.\n")
+    tampil_rute_user()
+    kode = input_nonempty("Masukkan kode rute: ").upper()
+
+    if kode not in rute_pesawat:
+        print("Rute tidak ditemukan!")
         return
 
-    print("\n===== PESAN TIKET =====")
-    for key, data in rute_pesawat.items():
-        print(f"Kode Rute      : {key}")
-        print(f"Rute           : {data['rute']}")
-        print(f"Harga          : {data['harga']}")
-        print(f"Jadwal         : {data['jadwal']}")
-        print("---------------------------")
+    r = rute_pesawat[kode]
+    kursi = r["kursi"]
 
+    tampil_kursi(kursi)
+
+    # pilih kursi
     while True:
-        key_rute = input("Masukkan KODE RUTE (atau 'b' untuk batal): ").upper().strip()
-        if key_rute == "":
-            print("Kode rute tidak boleh kosong!\n")
+        pilih = input_nonempty("Pilih nomor kursi: ")
+        if not pilih.isdigit():
+            print("Harus angka!")
             continue
-        if key_rute == "B":
-            print("Batal memesan.\n")
-            return
-        if key_rute not in rute_pesawat:
-            print("Kode rute tidak ditemukan.\n")
+
+        pilih = int(pilih)
+        if pilih < 1 or pilih > 140:
+            print("Kursi tidak tersedia!")
             continue
-        data_rute = rute_pesawat[key_rute]
+
+        if kursi[pilih] == "X":
+            print("Kursi sudah digunakan!")
+            continue
+
         break
 
-    while True:
-        jml = input("Masukkan jumlah tiket: ").strip()
-        if jml == "":
-            print("Jumlah tiket tidak boleh kosong!\n")
-            continue
-        if not jml.isdigit():
-            print("Jumlah tiket harus angka!\n")
-            continue
-        jml = int(jml)
-        if jml < 1:
-            print("Minimal pesan 1 tiket!\n")
-            continue
-        break
+    kursi[pilih] = "X"
 
-    total = data_rute["harga"] * jml
-    print(f"Total harga sebelum diskon: {total}")
+    tiket_id = f"T{len(pesanan.get(id_user, {})) + 1}"
 
-    # ======= FITUR DISKON =======
-    diskon_input = input("Masukkan kode diskon (jika ada): ").upper()
-    if diskon_input in kode_diskon:
-        persen = kode_diskon[diskon_input]
-        potongan = total * persen // 100
-        total -= potongan
-        print(f"Diskon {persen}% diterapkan! Potongan: {potongan}")
-    else:
-        print("Tidak ada diskon.")
-
-    print(f"Total harga akhir: {total}")
-
-    print(f"Total harga akhir: {total}")
-    print("\n===== DETAIL PEMESANAN =====")
-    print(f"Rute      : {data_rute['rute']}")
-    print(f"Jadwal    : {data_rute['jadwal']}")
-    print(f"Jumlah    : {jml}")
-    print(f"Total     : {total}")
-    print("-----------------------------")
-    
-
-    while True:
-        konf = input("Konfirmasi pembelian? (y/n): ").lower().strip()
-        if konf == "":
-            print("Input konfirmasi tidak boleh kosong!\n")
-            continue
-        if konf not in ("y", "n"):
-            print("Silakan masukkan 'y' atau 'n'.\n")
-            continue
-        break
-
-    if konf != "y":
-        print("Pemesanan dibatalkan.\n")
-        return
-
-    item = {
-        "key": key_rute,
-        "rute": data_rute["rute"],
-        "harga": data_rute["harga"],
-        "jadwal": data_rute["jadwal"],
-        "jumlah": jml,
-        "total": total
+    data = {
+        "kode_rute": kode,
+        "kursi": pilih,
+        "harga": r["harga"],
+        "asal": r["asal"],
+        "tujuan": r["tujuan"],
+        "jadwal": r["jadwal"],
+        "status": "active"
     }
 
-    if id_user not in pesanan:
-        pesanan[id_user] = {}
+    pesanan.setdefault(id_user, {})[tiket_id] = data
 
-    id_tiket = f"T{len(pesanan[id_user])}"
-    pesanan[id_user][id_tiket] = item
+    print(f"Tiket berhasil dipesan! ID Tiket: {tiket_id}\n")
 
-    print(f"Tiket berhasil dipesan! ID Tiket Anda: {id_tiket}\n")
-
-def tampil_tiket_user(id_user):
-    bersihkan_rute_kadaluarsa()
-    print("\n===== TIKET SAYA =====")
+def tiket_user(id_user):
+    bersihkan_kadaluarsa()
+    print("\n===== TIKET AKTIF =====")
     data = pesanan.get(id_user, {})
+
     if not data:
-        print("Anda belum memiliki tiket.\n")
-        return
-    for key_tiket, info in data.items():
-        print(f"ID Tiket      : {key_tiket}")
-        print(f"Kode Rute     : {info['key']}")
-        print(f"Nama Rute     : {info['rute']}")
-        print(f"Harga Satuan  : {info['harga']}")
-        print(f"Jumlah Tiket  : {info['jumlah']}")
-        print(f"Total Harga   : {info['total']}")
-        print(f"Jadwal        : {info['jadwal']}")
-        print("---------------------------")
+        print("Tidak ada tiket aktif.\n")
+    else:
+        for t, d in data.items():
+            print("------------------------")
+            print(f"ID Tiket   : {t}")
+            print(f"Rute       : {d['asal']} → {d['tujuan']}")
+            print(f"Jadwal     : {d['jadwal']}")
+            print(f"Kursi      : {d['kursi']}")
+            print(f"Harga      : {d['harga']}")
+            print("------------------------")
 
-def batalkan_tiket(id_user):
-    bersihkan_rute_kadaluarsa()
-    if id_user not in pesanan or not pesanan[id_user]:
-        print("Anda belum memiliki tiket.\n")
-        return
+def riwayat_user(id_user):
+    print("\n===== RIWAYAT PEMESANAN =====")
+    data = riwayat.get(id_user, {})
 
-    tampil_tiket_user(id_user)
-
-    while True:
-        pilih = input("Masukkan ID tiket yang ingin dibatalkan atau 'b': ").upper().strip()
-        if pilih == "":
-            print("Input tidak boleh kosong!\n")
-            continue
-        if pilih == "B":
-            print("Batal membatalkan.\n")
-            return
-        if pilih not in pesanan[id_user]:
-            print("ID tiket tidak ditemukan!\n")
-            continue
-        del pesanan[id_user][pilih]
-        print("Tiket berhasil dibatalkan!\n")
+    if not data:
+        print("Belum ada riwayat.\n")
         return
 
-def user_login(email):
+    for t, d in data.items():
+        print("------------------------")
+        print(f"ID Tiket   : {t}")
+        print(f"Status     : {d['status']}")
+        print(f"Rute       : {d['asal']} → {d['tujuan']}")
+        print(f"Jadwal     : {d['jadwal']}")
+        print(f"Kursi      : {d['kursi']}")
+        print("------------------------")
+
+def user_menu(email):
     id_user = akun[email]["id"]
+
     while True:
-        bersihkan_rute_kadaluarsa()
+        bersihkan_kadaluarsa()
         print("\n===== MENU USER =====")
         print("1. Tampilkan Rute")
         print("2. Pesan Tiket")
-        print("3. Tiket Saya")
-        print("4. Batalkan Tiket")
+        print("3. Tiket Aktif")
+        print("4. Riwayat Pemesanan")
         print("5. Logout")
 
-        pilih = input_nonempty("Pilih menu: ")
+        p = input_nonempty("Pilih: ")
 
-        if pilih == "1":
+        if p == "1":
             tampil_rute_user()
-        elif pilih == "2":
+        elif p == "2":
             pesan_tiket(id_user)
-        elif pilih == "3":
-            tampil_tiket_user(id_user)
-        elif pilih == "4":
-            batalkan_tiket(id_user)
-        elif pilih == "5":
-            print("Logout...\n")
+        elif p == "3":
+            tiket_user(id_user)
+        elif p == "4":
+            riwayat_user(id_user)
+        elif p == "5":
             break
         else:
-            print("Pilihan tidak valid!\n")
+            print("Pilihan salah!\n")
 
-def menu_user():
-    while True:
-        print("\n====== MENU USER ======")
-        print("1. Login")
-        print("2. Buat Akun")
-        print("3. Kembali")
 
-        pilih = input_nonempty("Pilih menu: ")
-
-        if pilih == "1":
-            email = login()
-            if email:
-                user_login(email)
-        elif pilih == "2":
-            buat_akun()
-        elif pilih == "3":
-            break
-        else:
-            print("Pilihan tidak valid!\n")
-
-# ==============================
 # LOKET
-# ==============================
-def login_loket_form():
-    print("\n===== LOGIN LOKET =====")
-    username = input_nonempty("Masukkan username loket: ")
-    password = input_nonempty("Masukkan password: ")
+def loket_proses():
+    print("\n===== GUNAKAN TIKET =====")
+    kode = input_nonempty("Masukkan ID tiket: ").upper()
 
-    if username == login_loket[0] and password == login_loket[1]:
-        print("Login loket berhasil!\n")
-        loket_menu()
-    else:
-        print("Login gagal!\n")
+    ditemukan = False
 
-def login_admin_form():
-    print("\n===== LOGIN ADMIN =====")
-    username = input_nonempty("Masukkan username admin: ")
-    password = input_nonempty("Masukkan password: ")
+    # cari tiket di semua user
+    for uid, tk in pesanan.items():
+        if kode in tk:
+            ditemukan = True
+            data = tk[kode]
 
-    if username == login_admin[0] and password == login_admin[1]:
-        print("Login admin berhasil!\n")
-        menu_admin()
-    else:
-        print("Login gagal!\n")
+            # tampilkan detail tiket
+            print("\n===== DATA TIKET =====")
+            print(f"ID Tiket   : {kode}")
+            print(f"User ID    : {uid}")
+            print(f"Rute       : {data['asal']} → {data['tujuan']}")
+            print(f"Jadwal     : {data['jadwal']}")
+            print(f"Kursi      : {data['kursi']}")
+            print(f"Harga      : {data['harga']}")
+            print("======================")
+
+            # konfirmasi
+            while True:
+                konfirmasi = input("Gunakan tiket ini? (Y/N): ").strip().upper()
+                if konfirmasi in ["Y", "N"]:
+                    break
+                print("Input harus Y atau N!")
+
+            if konfirmasi == "Y":
+                data["status"] = "used"
+                riwayat.setdefault(uid, {})[kode] = data
+                del tk[kode]
+                print("Tiket berhasil digunakan!\n")
+            else:
+                print("Penggunaan tiket dibatalkan.\n")
+
+            return
+
+    if not ditemukan:
+        print("Tiket tidak ditemukan!\n")
 
 def loket_menu():
     while True:
-        bersihkan_rute_kadaluarsa()
         print("\n===== MENU LOKET =====")
         print("1. Gunakan Tiket")
         print("2. Logout")
 
-        pilih = input_nonempty("Pilih menu: ")
-        if pilih == "1":
-            loket_proses_tiket()
-        elif pilih == "2":
-            print("Logout...\n")
+        p = input_nonempty("Pilih: ")
+
+        if p == "1":
+            loket_proses()
+        elif p == "2":
             break
         else:
-            print("Pilihan tidak valid!\n")
+            print("Pilihan salah!\n")
 
-def loket_proses_tiket():
-    print("\n===== PENGGUNAAN TIKET =====")
-    id_tiket = input_nonempty("Masukkan ID Tiket: ").upper()
 
-    ditemukan = False
-    uid = None
-    data_tiket = None
-
-    for user_id, tiket_list in pesanan.items():
-        if id_tiket in tiket_list:
-            ditemukan = True
-            uid = user_id
-            data_tiket = tiket_list[id_tiket]
-            break
-
-    if not ditemukan:
-        print("Tiket tidak ditemukan!\n")
-        return
-
-    print("\n===== DATA TIKET =====")
-    for k, v in data_tiket.items():
-        print(f"{k.capitalize()} : {v}")
-
-    konfirmasi = input_nonempty("Apakah data benar? (y/n): ").lower()
-    if konfirmasi == "y":
-        del pesanan[uid][id_tiket]
-        print("\nTiket berhasil digunakan!\n")
-    else:
-        print("Pembatalan proses.\n")
-
-# ==============================
 # MAIN MENU
-# ==============================
+
 while True:
-    bersihkan_rute_kadaluarsa()
-    print("\n====== APLIKASI TIKET PESAWAT ======")
+    bersihkan_kadaluarsa()
+    print("\n===== APLIKASI TIKET PESAWAT =====")
     print("1. Admin")
     print("2. User")
     print("3. Loket")
     print("4. Keluar")
 
-    pilih = input_nonempty("Pilih menu: ")
+    p = input_nonempty("Pilih menu: ")
 
-    if pilih == "1":
-        login_admin_form()
-    elif pilih == "2":
-        menu_user()
-    elif pilih == "3":
-        login_loket_form()
-    elif pilih == "4":
-        print("Keluar dari program...")
+    if p == "1":
+        u = input_nonempty("Username admin: ")
+        pw = input_nonempty("Password: ")
+        if (u, pw) == login_admin:
+            menu_admin()
+        else:
+            print("Login gagal!\n")
+
+    elif p == "2":
+        print("\n1. Login\n2. Daftar")
+        op = input_nonempty("Pilih: ")
+
+        if op == "1":
+            email = login()
+            if email:
+                user_menu(email)
+        elif op == "2":
+            buat_akun()
+
+    elif p == "3":
+        u = input_nonempty("Username loket: ")
+        pw = input_nonempty("Password: ")
+        if (u, pw) == login_loket:
+            loket_menu()
+        else:
+            print("Login gagal!\n")
+
+    elif p == "4":
+        print("Keluar program...")
         break
+
     else:
-        print("Pilihan tidak valid!\n")
+        print("Pilihan salah!\n")
